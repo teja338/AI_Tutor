@@ -55,7 +55,6 @@ export default function LoginScreen() {
     >
       <StarsBackground />
 
-      {/* Back Button */}
       <TouchableOpacity
         style={styles.backButton}
         onPress={() => router.back()}
@@ -63,11 +62,11 @@ export default function LoginScreen() {
         <Ionicons name="arrow-back" size={24} color="white" />
       </TouchableOpacity>
 
-      {/* Card */}
+      
       <View style={styles.card}>
         <Text style={styles.title}>Welcome Back 👋</Text>
 
-        {/* Email */}
+    
         <TextInput
           placeholder="Enter your email"
           value={email}
@@ -77,7 +76,7 @@ export default function LoginScreen() {
           style={styles.input}
         />
 
-        {/* Password */}
+        
         <TextInput
           placeholder="Enter your password"
           value={password}
@@ -87,7 +86,7 @@ export default function LoginScreen() {
           style={styles.input}
         />
 
-        {/* Login Button */}
+      
         <TouchableOpacity
           style={styles.loginButton}
           onPress={handleLogin}
@@ -98,10 +97,10 @@ export default function LoginScreen() {
           </Text>
         </TouchableOpacity>
 
-        {/* OR */}
+        
         <Text style={styles.orText}>OR</Text>
 
-        {/* Social */}
+        
         <View style={styles.socialRow}>
           <View style={styles.socialButton}>
             <Text style={styles.socialText}>G</Text>
@@ -111,7 +110,7 @@ export default function LoginScreen() {
           </View>
         </View>
 
-        {/* Footer */}
+        
         <Text style={styles.footerText}>
           Don’t have an account?{" "}
           <Text

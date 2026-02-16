@@ -33,11 +33,8 @@ export default function SignupScreen() {
   if (response?.type === "success") {
     const { authentication } = response;
 
-    // Temporary success (backend comes next)
     alert("Google login successful 🎉");
 
-    // NEXT STEP (later):
-    // Send Google token to backend
   }
 }, [response]);
 
@@ -84,7 +81,6 @@ export default function SignupScreen() {
     >
       <StarsBackground />
 
-      {/* Back Button */}
       <TouchableOpacity
         style={styles.backButton}
         onPress={() => router.back()}
@@ -92,7 +88,6 @@ export default function SignupScreen() {
         <Ionicons name="arrow-back" size={24} color="white" />
       </TouchableOpacity>
 
-      {/* Card */}
       <View style={styles.card}>
         <Text style={styles.title}>
           Let's Dive into the World Of Knowledge
@@ -132,8 +127,7 @@ export default function SignupScreen() {
           value={confirmPassword}
           onChangeText={setConfirmPassword}
         />
-
-        {/* Signup Button */}
+        
         <TouchableOpacity
           style={styles.signupButton}
           onPress={handleSignup}

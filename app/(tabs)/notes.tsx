@@ -15,16 +15,14 @@ import { useRouter } from "expo-router";
 
 import StarsBackground from "../../components/StarsBackground";
 
-/* 🔹 CHAT MESSAGE TYPE */
+
 type ChatMessage = {
   role: "user" | "bot";
   text: string;
 };
 
-/* ✅ BACKEND BASE URL (CHANGE THIS) */
-const BASE_URL = "http://10.42.241.36:5000";
 
-/* ✅ NOTES ENDPOINT */
+const BASE_URL = "http://10.68.127.36:5000";
 const API_URL = `${BASE_URL}/api/ai/notes`;
 
 export default function NotesScreen() {
@@ -58,7 +56,7 @@ export default function NotesScreen() {
 
       const rawText = await res.text();
 
-      // ✅ If backend returns HTML / Not Found etc
+      
       let data: any = null;
       try {
         data = JSON.parse(rawText);
@@ -98,7 +96,7 @@ export default function NotesScreen() {
     >
       <StarsBackground />
 
-      {/* HEADER */}
+      
       <View style={styles.header}>
         <TouchableOpacity onPress={() => router.back()}>
           <Ionicons name="arrow-back" size={24} color="white" />
@@ -108,7 +106,7 @@ export default function NotesScreen() {
         <View style={{ width: 24 }} />
       </View>
 
-      {/* CHAT AREA */}
+      
       <ScrollView
         contentContainerStyle={styles.chatArea}
         showsVerticalScrollIndicator={false}
@@ -138,7 +136,7 @@ export default function NotesScreen() {
         )}
       </ScrollView>
 
-      {/* INPUT BAR */}
+      
       <View style={styles.inputBar}>
         <TextInput
           placeholder="Ask a topic..."
@@ -156,7 +154,7 @@ export default function NotesScreen() {
   );
 }
 
-/* 🔹 STYLES */
+/*  STYLES */
 const styles = StyleSheet.create({
   container: { flex: 1 },
 
@@ -222,7 +220,6 @@ const styles = StyleSheet.create({
   },
 });
 
-/* 🔹 MARKDOWN STYLES */
 const markdownStyles = {
   body: {
     color: "#e5e7eb",

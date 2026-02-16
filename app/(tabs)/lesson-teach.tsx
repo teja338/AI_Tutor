@@ -1,24 +1,25 @@
-import React, { useEffect, useState, useCallback } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
   View,
   Text,
   StyleSheet,
   TouchableOpacity,
   ScrollView,
-  Dimensions,
-  ActivityIndicator,
+  TextInput,
 } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import * as Speech from "expo-speech";
 import * as ScreenOrientation from "expo-screen-orientation";
 import { useFocusEffect } from "@react-navigation/native";
+import { Ionicons } from "@expo/vector-icons";
+import { Audio } from "expo-av";
 
 import StarsBackground from "../../components/StarsBackground";
 import RobotAvatar from "../../components/Robotavatar";
 
-// ✅ CHANGE this to your backend IP + PORT
-const API_BASE_URL = "http://10.42.241.36:5000";
+const BASE_URL = "http://10.68.127.36:5000";
+const LESSON_API = `${BASE_URL}/api/ollama/lesson`;
 
 export default function LessonTeachScreen() {
   const { topic } = useLocalSearchParams<{ topic: string }>();
@@ -26,249 +27,352 @@ export default function LessonTeachScreen() {
 
   const [steps, setSteps] = useState<string[]>([]);
   const [stepIndex, setStepIndex] = useState(0);
-  const [reply, setReply] = useState("");
-
+  const [currentStepTitle, setCurrentStepTitle] = useState("");
+  const [lessonText, setLessonText] = useState("Starting lesson...");
+  const [loading, setLoading] = useState(false);
   const [isTalking, setIsTalking] = useState(false);
-  const [isLoading, setIsLoading] = useState(false);
 
-  const { width, height } = Dimensions.get("window");
-  const robotW = Math.min(width * 0.45, 420);
-  const robotH = Math.min(height * 0.7, 250);
 
-  // ✅ LOCK LANDSCAPE EVERY TIME SCREEN OPENS
-  useFocusEffect(
-    useCallback(() => {
-      const lockLandscape = async () => {
-        await ScreenOrientation.lockAsync(
-          ScreenOrientation.OrientationLock.LANDSCAPE
-        );
-      };
+  const [mode, setMode] = useState<"teaching" | "doubt" | "answering">("teaching");
+  const [doubtText, setDoubtText] = useState("");
 
-      lockLandscape();
+  const [recording, setRecording] = useState<Audio.Recording | null>(null);
+  const [isRecording, setIsRecording] = useState(false);
 
-      return () => {
-        ScreenOrientation.lockAsync(
-          ScreenOrientation.OrientationLock.PORTRAIT_UP
-        );
-      };
-    }, [])
-  );
+  const isScreenActive = useRef(true);
 
-  const stopAll = () => {
+  /* ---------------- SPEECH ---------------- */
+
+  const speak = useCallback((text: string) => {
     Speech.stop();
-    setIsTalking(false);
-  };
-
-  const handleExit = async () => {
-    stopAll();
-
-    await ScreenOrientation.lockAsync(
-      ScreenOrientation.OrientationLock.PORTRAIT_UP
-    );
-
-    router.back();
-  };
-
-  // ✅ START LESSON (mode=start)
-  const startLesson = async () => {
-    try {
-      setIsLoading(true);
-
-      const res = await fetch(`${API_BASE_URL}/api/lesson/lesson`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          mode: "start",
-          topic,
-        }),
-      });
-
-      const data = await res.json();
-
-      if (!res.ok) {
-        console.log("Start Lesson Error:", data);
-        return;
-      }
-
-      setSteps(data.steps || []);
-      setStepIndex(0);
-    } catch (err) {
-      console.log("Start Lesson Failed:", err);
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  // ✅ TEACH STEP (mode=teach)
-  const teachStep = async (index: number) => {
-    if (!steps.length) return;
-
-    try {
-      setIsLoading(true);
-
-      const res = await fetch(`${API_BASE_URL}/api/lesson`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          mode: "teach",
-          topic,
-          steps,
-          stepIndex: index,
-        }),
-      });
-
-      const data = await res.json();
-
-      if (!res.ok) {
-        console.log("Teach Step Error:", data);
-        return;
-      }
-
-      const explanation = data.reply || "Sorry, I couldn't explain that.";
-      setReply(explanation);
-
-      // ✅ Speak explanation WITH lip sync
-      stopAll();
-
-      Speech.speak(explanation, {
+    setTimeout(() => {
+      Speech.speak(text, {
         language: "en",
         rate: 0.9,
         pitch: 1,
-
         onStart: () => setIsTalking(true),
-
-        onDone: () => {
-          // ✅ Keep lips moving for the next sentence too
-          setIsTalking(true);
-
-          Speech.speak("Do you have any doubts? Click Continue to proceed.", {
-            language: "en",
-            rate: 0.9,
-            pitch: 1,
-
-            onDone: () => {
-              // ✅ Stop lips finally after BOTH speeches finish
-              setIsTalking(false);
-            },
-
-            onStopped: () => setIsTalking(false),
-            onError: () => setIsTalking(false),
-          });
-        },
-
+        onDone: () => setIsTalking(false),
         onStopped: () => setIsTalking(false),
         onError: () => setIsTalking(false),
       });
-    } catch (err) {
-      console.log("Teach Step Failed:", err);
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  // ✅ Start lesson once
-  useEffect(() => {
-    startLesson();
+    }, 150);
   }, []);
 
-  // ✅ Teach when steps ready or step changes
-  useEffect(() => {
-    if (steps.length > 0) {
-      teachStep(stepIndex);
-    }
-  }, [steps, stepIndex]);
+  /* ---------------- ORIENTATION ---------------- */
 
-  // ✅ Continue button = go next part
-  const handleContinue = () => {
-    stopAll();
+  useFocusEffect(
+    useCallback(() => {
+      isScreenActive.current = true;
 
-    if (stepIndex < steps.length - 1) {
-      setStepIndex((prev) => prev + 1);
-    } else {
-      Speech.speak("Lesson completed. Great job!", {
-        language: "en",
-        rate: 0.9,
-        onStart: () => setIsTalking(true),
-        onDone: () => setIsTalking(false),
+      ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.LANDSCAPE);
+
+       return () => {
+  isScreenActive.current = false;
+  Speech.stop();
+  setIsTalking(false);
+  ScreenOrientation.unlockAsync();
+};
+
+    }, [])
+  );
+
+  /* ---------------- LESSON START ---------------- */
+
+  const startLesson = useCallback(async () => {
+    if (!topic) return;
+
+    try {
+      setLoading(true);
+      setLessonText("Generating lesson steps...");
+
+      const res = await fetch(LESSON_API, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ mode: "start", topic }),
       });
+
+      const data = await res.json();
+      setSteps(data.steps);
+      setStepIndex(0);
+
+      setTimeout(() => teachStep(data.steps, 0), 300);
+    } catch {
+      setLessonText("⚠️ Network error.");
+    } finally {
+      setLoading(false);
+    }
+  }, [topic]);
+
+  /* ---------------- TEACH STEP ---------------- */
+
+  const teachStep = async (stepList: string[], index: number) => {
+    try {
+      setLoading(true);
+      setMode("teaching");
+
+      const stepTitle = stepList[index];
+      setCurrentStepTitle(stepTitle);
+      setLessonText("Teaching...");
+
+      const res = await fetch(LESSON_API, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+  mode: "teach",
+  topic,
+  step: stepTitle,  
+}),
+
+      });
+
+      const data = await res.json();
+      if (!isScreenActive.current) return;
+
+      setLessonText(data.reply);
+      speak(data.reply);
+    } catch {
+      setLessonText("⚠️ Teaching failed.");
+    } finally {
+      setLoading(false);
     }
   };
 
+  /* ---------------- CONTINUE ---------------- */
+
+  const handleContinue = () => {
+    Speech.stop();
+
+    const nextIndex = stepIndex + 1;
+    if (nextIndex >= steps.length) {
+      setLessonText("✅ Lesson completed!");
+      speak("Lesson completed! Great job!");
+      return;
+    }
+
+    setStepIndex(nextIndex);
+    teachStep(steps, nextIndex);
+  };
+
+  /* ---------------- DOUBT MODE ---------------- */
+
+  const handleDoubtPress = () => {
+    Speech.stop();
+    setMode("doubt");
+    speak("Tell me your doubt. You can type or speak.");
+  };
+
+  /* ---------------- RECORD VOICE ---------------- */
+
+  const startRecording = async () => {
+    Speech.stop();
+
+    const permission = await Audio.requestPermissionsAsync();
+    if (!permission.granted) return;
+
+    await Audio.setAudioModeAsync({
+      allowsRecordingIOS: true,
+      playsInSilentModeIOS: true,
+    });
+
+    const { recording } = await Audio.Recording.createAsync(
+      Audio.RecordingOptionsPresets.HIGH_QUALITY
+    );
+
+    setRecording(recording);
+    setIsRecording(true);
+  };
+
+  const stopRecording = async () => {
+    if (!recording) return;
+
+    setIsRecording(false);
+    await recording.stopAndUnloadAsync();
+
+    const uri = recording.getURI();
+    setRecording(null);
+
+    if (uri) {
+      const text = await uploadAudio(uri);
+      setDoubtText(text);
+    }
+  };
+  
+  /* ---------------- ASK DOUBT ---------------- */
+
+const askDoubt = async () => {
+  if (!doubtText.trim()) {
+    speak("Please tell me your doubt first");
+    return;
+  }
+
+  Speech.stop();
+  setLoading(true);
+
+  try {
+    const res = await fetch(LESSON_API, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        mode: "doubt",
+        topic: topic,
+        currentStep: currentStepTitle,
+        question: doubtText,
+      }),
+    });
+
+    
+    let data;
+    try {
+      const text = await res.text();
+      data = JSON.parse(text);
+    } catch {
+      setLessonText("Server error. Please try again.");
+      return;
+    }
+
+    setLessonText(data.reply);
+    speak(data.reply);
+    setMode("teaching");
+
+  } catch (err) {
+    setLessonText("Network error while answering doubt.");
+  } finally {
+    setLoading(false);
+  }
+};
+
+  /* ---------------- WHISPER API ---------------- */
+
+  const uploadAudio = async (uri: string) => {
+    const formData = new FormData();
+    formData.append("audio", {
+      uri,
+      name: "speech.m4a",
+      type: "audio/m4a",
+    } as any);
+
+    const res = await fetch(`${BASE_URL}/api/speech/speech-to-text`, {
+      method: "POST",
+      body: formData,
+    });
+
+    const data = await res.json();
+    return data.text || "";
+  };
+
+  /* ---------------- SEND DOUBT TO AI ---------------- */
+
+  const sendDoubt = async () => {
+    if (!doubtText.trim()) return;
+
+    setMode("answering");
+    setLessonText("Thinking about your doubt...");
+
+    const res = await fetch(`${BASE_URL}/api/ollama/doubt`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        topic,
+        step: currentStepTitle,
+        doubt: doubtText,
+      }),
+    });
+
+    const data = await res.json();
+
+    setLessonText(data.answer);
+    speak(data.answer);
+
+    setMode("teaching");
+    setDoubtText("");
+  };
+
+   const handleExit = async () => {
+  try {
+    
+    Speech.stop();
+    setIsTalking(false);
+  
+    isScreenActive.current = false;
+    setLoading(false);
+
+
+    await new Promise(resolve => setTimeout(resolve, 250));
+
+    await ScreenOrientation.unlockAsync();
+
+    router.replace("/(tabs)");
+    
+  } catch (e) {
+    console.log("Exit error:", e);
+  }
+};
+
+
+  useEffect(() => {
+    startLesson();
+  }, [startLesson]);
+
+  /* ---------------- UI ---------------- */
+
   return (
-    <LinearGradient
-      colors={["#020617", "#030712", "#1e1b4b"]}
-      style={styles.container}
-    >
+    <LinearGradient colors={["#020617", "#030712", "#1e1b4b"]} style={styles.container}>
       <StarsBackground />
 
-      {/* ❌ EXIT BUTTON */}
-      <TouchableOpacity
-        style={styles.exitBtn}
-        onPress={handleExit}
-        activeOpacity={0.8}
-      >
+      <TouchableOpacity style={styles.exitBtn} onPress={handleExit}>
         <Text style={styles.exitText}>✖ Exit</Text>
       </TouchableOpacity>
 
-      {/* ✅ SPLIT SCREEN */}
       <View style={styles.splitContainer}>
-        {/* LEFT SIDE 🤖 */}
+
+        {/* LEFT ROBOT */}
         <View style={styles.leftHalf}>
-          <View style={styles.robotWrapper}>
-            <RobotAvatar width={robotW} height={robotH} isTalking={isTalking} />
-            <Text style={styles.robotText}>
-              {isLoading ? "Thinking..." : isTalking ? "Speaking..." : "Teaching..."}
-            </Text>
-          </View>
+          <RobotAvatar width={320} height={260} isTalking={isTalking} />
         </View>
 
-        {/* RIGHT SIDE 📄 */}
+        {/* RIGHT PANEL */}
         <View style={styles.rightHalf}>
           <Text style={styles.topic}>{topic}</Text>
-
-          <Text style={styles.stepTitle}>
-            {steps.length > 0
-              ? `Part ${stepIndex + 1} / ${steps.length}: ${steps[stepIndex]}`
-              : "Preparing lesson..."}
-          </Text>
+          <Text style={styles.stepTitle}>📌 {currentStepTitle}</Text>
 
           <ScrollView style={styles.textBox}>
-            {isLoading && !reply ? (
-              <View style={{ paddingTop: 20 }}>
-                <ActivityIndicator size="large" color="#a78bfa" />
-                <Text style={{ color: "#cbd5e1", marginTop: 10 }}>
-                  Generating explanation...
-                </Text>
-              </View>
-            ) : (
-              <Text style={styles.text}>{reply}</Text>
-            )}
+            <Text style={styles.text}>{lessonText}</Text>
           </ScrollView>
+
+          {/* DOUBT INPUT */}
+          {mode === "doubt" && (
+            <View style={styles.doubtBox}>
+              <TextInput
+                value={doubtText}
+                onChangeText={setDoubtText}
+                placeholder="Ask your doubt..."
+                placeholderTextColor="#94a3b8"
+                style={styles.input}
+              />
+
+              <TouchableOpacity
+                style={[styles.micBtn, { backgroundColor: isRecording ? "#ef4444" : "#22c55e" }]}
+                onPress={isRecording ? stopRecording : startRecording}
+              >
+                <Ionicons name={isRecording ? "stop" : "mic"} size={18} color="white" />
+              </TouchableOpacity>
+
+              <TouchableOpacity style={styles.askBtn} onPress={askDoubt}>
+                <Text style={{ fontWeight: "800" }}>Ask</Text>
+              </TouchableOpacity>
+            </View>
+          )}
 
           {/* CONTROLS */}
           <View style={styles.controls}>
-            <TouchableOpacity
-              style={styles.button}
-              onPress={handleContinue}
-              activeOpacity={0.8}
-            >
+            <TouchableOpacity style={styles.button} onPress={handleContinue}>
               <Text style={styles.buttonText}>Continue ▶</Text>
             </TouchableOpacity>
 
-            <TouchableOpacity
-              style={[styles.button, styles.doubtButton]}
-              onPress={() => {
-                stopAll();
-                Speech.speak("Sure. Please ask your doubt.", {
-                  language: "en",
-                  rate: 0.9,
-                  onStart: () => setIsTalking(true),
-                  onDone: () => setIsTalking(false),
-                });
-              }}
-              activeOpacity={0.8}
-            >
-              <Text style={styles.buttonText}>Doubt ❓</Text>
+            <TouchableOpacity style={[styles.button, styles.doubtBtn]} onPress={handleDoubtPress}>
+              <Text style={[styles.buttonText, { color: "white" }]}>Doubt ❓</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -277,108 +381,45 @@ export default function LessonTeachScreen() {
   );
 }
 
+/* ---------------- STYLES ---------------- */
+
 const styles = StyleSheet.create({
   container: { flex: 1 },
 
-  splitContainer: {
-    flex: 1,
-    flexDirection: "row",
-    paddingTop: 20,
-  },
+  splitContainer: { flex: 1, flexDirection: "row", paddingTop: 20 },
+  leftHalf: { flex: 1, justifyContent: "center", alignItems: "center" },
+  rightHalf: { flex: 1, paddingHorizontal: 20 },
 
-  leftHalf: {
-    flex: 1,
-    justifyContent: "center",
-    alignItems: "center",
-  },
+  topic: { color: "white", fontSize: 20, fontWeight: "700" },
+  stepTitle: { color: "#c4b5fd", marginBottom: 10 },
 
-  robotWrapper: {
-    width: "92%",
-    height: "92%",
-    borderRadius: 20,
-    borderWidth: 2,
-    borderColor: "#a78bfa",
-    justifyContent: "center",
-    alignItems: "center",
-    backgroundColor: "rgba(0,0,0,0.3)",
-  },
+  textBox: { flex: 1, backgroundColor: "rgba(255,255,255,0.06)", borderRadius: 16, padding: 14 },
+  text: { color: "#e5e7eb", fontSize: 15, lineHeight: 24 },
 
-  robotText: {
-    color: "#cbd5e1",
-    marginTop: 12,
-    fontSize: 14,
-  },
+  controls: { flexDirection: "row", gap: 10, marginTop: 10 },
 
-  rightHalf: {
-    flex: 1,
-    paddingHorizontal: 20,
-    justifyContent: "center",
-  },
+  button: { flex: 1, backgroundColor: "#a78bfa", padding: 12, borderRadius: 14, alignItems: "center" },
+  doubtBtn: { backgroundColor: "#475569" },
 
-  topic: {
-    color: "white",
-    fontSize: 20,
-    fontWeight: "700",
-    marginBottom: 6,
-  },
+  buttonText: { fontWeight: "800" },
 
-  stepTitle: {
-    color: "#cbd5e1",
-    fontSize: 14,
-    marginBottom: 10,
-  },
+  doubtBox: { flexDirection: "row", gap: 8, marginBottom: 10 },
+  input: { flex: 1, backgroundColor: "rgba(0,0,0,0.35)", color: "white", borderRadius: 12, paddingHorizontal: 10 },
 
-  textBox: {
-    flex: 1,
-    backgroundColor: "rgba(255,255,255,0.06)",
-    borderRadius: 16,
-    padding: 14,
-    marginBottom: 15,
-  },
-
-  text: {
-    color: "#e5e7eb",
-    fontSize: 15,
-    lineHeight: 24,
-  },
-
-  controls: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    gap: 10,
-  },
-
-  button: {
-    flex: 1,
-    backgroundColor: "#a78bfa",
-    paddingVertical: 12,
-    borderRadius: 14,
-    alignItems: "center",
-  },
-
-  doubtButton: {
-    backgroundColor: "#475569",
-  },
-
-  buttonText: {
-    color: "#020617",
-    fontWeight: "700",
-  },
+  micBtn: { width: 42, height: 42, borderRadius: 12, alignItems: "center", justifyContent: "center" },
+  askBtn: { backgroundColor: "#facc15", paddingHorizontal: 12, justifyContent: "center", borderRadius: 12 },
 
   exitBtn: {
-    position: "absolute",
-    top: 20,
-    right: 20,
-    backgroundColor: "rgba(255,255,255,0.15)",
-    paddingVertical: 8,
-    paddingHorizontal: 14,
-    borderRadius: 12,
-    zIndex: 10,
-  },
+  position: "absolute",
+  top: 40,
+  right: 20,
+  zIndex: 9999,
+  elevation: 9999, 
+  backgroundColor: "rgba(0,0,0,0.55)",
+  paddingVertical: 10,
+  paddingHorizontal: 16,
+  borderRadius: 14,
+},
 
-  exitText: {
-    color: "white",
-    fontSize: 14,
-    fontWeight: "600",
-  },
+  exitText: { color: "white", fontWeight: "700" },
 });

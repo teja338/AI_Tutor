@@ -7,9 +7,10 @@ const STAR_COUNT = 60;
 
 export default function StarsBackground() {
   return (
-    <View style={StyleSheet.absoluteFill}>
+    // 👇 THIS LINE FIXES YOUR EXIT BUTTON
+    <View style={StyleSheet.absoluteFill} pointerEvents="none">
       {Array.from({ length: STAR_COUNT }).map((_, index) => {
-        const size = Math.random() * 2 + 1; // small stars
+        const size = Math.random() * 2 + 1;
         const top = Math.random() * height;
         const left = Math.random() * width;
         const opacity = Math.random() * 0.6 + 0.2;

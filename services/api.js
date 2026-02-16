@@ -1,4 +1,4 @@
-const BASE_URL = "http://10.119.80.36:5000/api";
+const BASE_URL = "http://10.68.127.36:5000/api";
 
 export const loginApi = async (email, password) => {
   const response = await fetch(`${BASE_URL}/auth/login`, {
